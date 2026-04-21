@@ -1,0 +1,7 @@
+profile,t,quality,bw_kbps,buffer_s,switches,stalls,elapsed_s
+baseline,30,720p,369257,16.2,1,0,30.5
+baseline,60,720p,369257,33.0,3,0,13.7
+baseline,90,720p,369257,3.0,3,0,43.7
+baseline,120,720p,369257,19.7,5,0,27.0
+baseline,150,720p,369257,36.5,7,0,10.2
+baseline,180,720p,369257,6.5,7,0,40.2

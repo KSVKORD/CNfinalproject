@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NetStream Player</title>
+  <style>
+    body  { font-family: monospace; margin: 24px; background: #111; color: #eee; }
+    video { width: 100%; max-width: 900px; display: block; }
+    #stats {
+      display: inline-block;
+      margin-top: 16px;
+      padding: 12px 16px;
+      background: #222;
+      line-height: 2;
+      min-width: 280px;
+      vertical-align: top;
+    }
+    #recorder {
+      margin-top: 16px;
+      padding: 12px 16px;
+      background: #1a1a2e;
+      display: inline-block;
+      vertical-align: top;
+      margin-left: 16px;
+      min-width: 260px;
+      line-height: 2;
+    }
+    button {
+      font-family: monospace;
+      background: #333;
+      color: #eee;
+      border: 1px solid #555;
+      padding: 6px 14px;
+      cursor: pointer;
+      margin-right: 8px;
+    }
+    button:disabled { opacity: 0.4; cursor: default; }
+    #log { font-size: 0.85em; color: #aaa; margin-top: 8px; }
+    a { color: #aaa; }
+  </style>
+</head>
+<body>
+  <p><a href="/">← Back</a></p>
+  <video id="video" controls loop></video>
+
+  <div style="margin-top:16px;">
+    <div id="stats">Loading...</div>
+    <div id="recorder">
+      <b>Auto Recorder</b><br>
+      Profile: <input id="profileName" type="text" value="baseline"
+        style="background:#333;color:#eee;border:1px solid #555;font-family:monospace;width:100px;">
+      <br>
+      <button id="btnStart">Start 3-min run</button>
+      <button id="btnDownload" disabled>Download CSV</button>
+      <div id="log">Press Start after pressing play.</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script>
+    const jobId = new URLSearchParams(location.search).get('jobId');
+    if (!jobId) { document.body.innerHTML = 'No video specified.'; throw ''; }
+
+    const video      = document.getElementById('video');
+    const statsDiv   = document.getElementById('stats');
+    const logDiv     = document.getElementById('log');
+    const btnStart   = document.getElementById('btnStart');
+    const btnDownload= document.getElementById('btnDownload');
+    const masterUrl  = `/hls/${jobId}/master.m3u8`;
+
+    const LEVELS = { 0: '360p', 1: '720p' };
+    let hls, switches = 0, stalls = 0;
+    let records = [];
+
+    // ── hls.js setup ──────────────────────────────────────────────────────
+    if (Hls.isSupported()) {
+      hls = new Hls();
+      hls.loadSource(masterUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.LEVEL_SWITCHED, () => { switches++; });
+      hls.on(Hls.Events.ERROR, (_, d) => {
+        if (d.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) stalls++;
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = masterUrl;
+    }
+
+    // ── Live stats panel ──────────────────────────────────────────────────
+    function getStats() {
+      const level  = hls ? hls.currentLevel : -1;
+      const bw     = hls ? Math.round(hls.bandwidthEstimate / 1000) : 0;
+      const bufEnd = video.buffered.length
+        ? video.buffered.end(video.buffered.length - 1) : 0;
+      const buffer = Math.max(0, bufEnd - video.currentTime).toFixed(1);
+      const time   = video.currentTime.toFixed(1);
+      return { quality: LEVELS[level] ?? 'auto', bw, buffer, switches, stalls, elapsed: time };
+    }
+
+    setInterval(() => {
+      const s = getStats();
+      statsDiv.innerHTML =
+        `<b>NetStream Stats</b><br>` +
+        `Quality:   ${s.quality}<br>` +
+        `Bandwidth: ${s.bw} kbps<br>` +
+        `Buffer:    ${s.buffer} s<br>` +
+        `Switches:  ${s.switches}<br>` +
+        `Stalls:    ${s.stalls}<br>` +
+        `Elapsed:   ${s.elapsed} s`;
+    }, 1000);
+
+    // ── Auto recorder ─────────────────────────────────────────────────────
+    const TOTAL     = 6;    // 6 samples
+    const INTERVAL  = 30;   // every 30 seconds
+    const DURATION  = TOTAL * INTERVAL * 1000; // 3 minutes in ms
+
+    btnStart.addEventListener('click', () => {
+      if (!hls) return;
+      records   = [];
+      switches  = 0;
+      stalls    = 0;
+      btnStart.disabled   = true;
+      btnDownload.disabled = true;
+
+      const profile = document.getElementById('profileName').value || 'baseline';
+      let sample = 0;
+
+      logDiv.textContent = `Recording ${profile}... (0/${TOTAL})`;
+
+      const timer = setInterval(() => {
+        sample++;
+        const s = getStats();
+        records.push({ profile, t: sample * INTERVAL, ...s });
+        logDiv.textContent = `Recording ${profile}... (${sample}/${TOTAL})`;
+
+        if (sample >= TOTAL) {
+          clearInterval(timer);
+          btnStart.disabled    = false;
+          btnDownload.disabled = false;
+          logDiv.textContent   = `Done. ${TOTAL} samples recorded. Download CSV.`;
+        }
+      }, INTERVAL * 1000);
+    });
+
+    // ── CSV export ────────────────────────────────────────────────────────
+    btnDownload.addEventListener('click', () => {
+      const profile = records[0]?.profile ?? 'data';
+      const header  = 'profile,t,quality,bw_kbps,buffer_s,switches,stalls,elapsed_s';
+      const rows    = records.map(r =>
+        `${r.profile},${r.t},${r.quality},${r.bw},${r.buffer},${r.switches},${r.stalls},${r.elapsed}`
+      );
+      const csv  = [header, ...rows].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a    = document.createElement('a');
+      a.href     = URL.createObjectURL(blob);
+      a.download = `${profile}.csv`;
+      a.click();
+    });
+  </script>
+</body>
+</html>
