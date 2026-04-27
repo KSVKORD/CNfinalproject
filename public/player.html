@@ -41,6 +41,7 @@
 </head>
 <body>
   <p><a href="/">← Back</a></p>
+  <!-- loop: video is shorter than the 3-min recording window -->
   <video id="video" controls loop></video>
 
   <div style="margin-top:16px;">
@@ -61,18 +62,17 @@
     const jobId = new URLSearchParams(location.search).get('jobId');
     if (!jobId) { document.body.innerHTML = 'No video specified.'; throw ''; }
 
-    const video      = document.getElementById('video');
-    const statsDiv   = document.getElementById('stats');
-    const logDiv     = document.getElementById('log');
-    const btnStart   = document.getElementById('btnStart');
-    const btnDownload= document.getElementById('btnDownload');
-    const masterUrl  = `/hls/${jobId}/master.m3u8`;
+    const video       = document.getElementById('video');
+    const statsDiv    = document.getElementById('stats');
+    const logDiv      = document.getElementById('log');
+    const btnStart    = document.getElementById('btnStart');
+    const btnDownload = document.getElementById('btnDownload');
+    const masterUrl   = `/hls/${jobId}/master.m3u8`;
 
     const LEVELS = { 0: '360p', 1: '720p' };
     let hls, switches = 0, stalls = 0;
     let records = [];
 
-    // ── hls.js setup ──────────────────────────────────────────────────────
     if (Hls.isSupported()) {
       hls = new Hls();
       hls.loadSource(masterUrl);
@@ -82,15 +82,15 @@
         if (d.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) stalls++;
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari: native HLS, no switching events available
       video.src = masterUrl;
     }
 
-    // ── Live stats panel ──────────────────────────────────────────────────
     function getStats() {
       const level  = hls ? hls.currentLevel : -1;
-      const bw     = hls ? Math.round(hls.bandwidthEstimate / 1000) : 0;
-      const bufEnd = video.buffered.length
-        ? video.buffered.end(video.buffered.length - 1) : 0;
+      const bw     = hls ? Math.round(hls.bandwidthEstimate / 1000) : 0; // bits → kbps
+      // buffered.end(last) gives the furthest downloaded position
+      const bufEnd = video.buffered.length ? video.buffered.end(video.buffered.length - 1) : 0;
       const buffer = Math.max(0, bufEnd - video.currentTime).toFixed(1);
       const time   = video.currentTime.toFixed(1);
       return { quality: LEVELS[level] ?? 'auto', bw, buffer, switches, stalls, elapsed: time };
@@ -108,22 +108,20 @@
         `Elapsed:   ${s.elapsed} s`;
     }, 1000);
 
-    // ── Auto recorder ─────────────────────────────────────────────────────
-    const TOTAL     = 6;    // 6 samples
-    const INTERVAL  = 30;   // every 30 seconds
-    const DURATION  = TOTAL * INTERVAL * 1000; // 3 minutes in ms
+    const TOTAL    = 6;
+    const INTERVAL = 30;
 
     btnStart.addEventListener('click', () => {
       if (!hls) return;
-      records   = [];
-      switches  = 0;
-      stalls    = 0;
-      btnStart.disabled   = true;
+      records  = [];
+      // reset per-run counters
+      switches = 0;
+      stalls   = 0;
+      btnStart.disabled    = true;
       btnDownload.disabled = true;
 
       const profile = document.getElementById('profileName').value || 'baseline';
       let sample = 0;
-
       logDiv.textContent = `Recording ${profile}... (0/${TOTAL})`;
 
       const timer = setInterval(() => {
@@ -141,7 +139,6 @@
       }, INTERVAL * 1000);
     });
 
-    // ── CSV export ────────────────────────────────────────────────────────
     btnDownload.addEventListener('click', () => {
       const profile = records[0]?.profile ?? 'data';
       const header  = 'profile,t,quality,bw_kbps,buffer_s,switches,stalls,elapsed_s';

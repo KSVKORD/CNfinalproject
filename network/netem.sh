@@ -1,11 +1,9 @@
 #!/bin/bash
-# netem.sh — Apply tc netem network profiles on WSL2 loopback (lo).
-# Chrome traffic to localhost:3000 travels through lo in WSL2 mirrored mode.
+# WSL2 mirrored networking: Chrome reaches the server via lo, not eth0
 # Usage: sudo ./netem.sh {baseline|latency|loss|congested|clear}
 
 IFACE=lo
 
-# Always clear any existing qdisc first
 tc qdisc del dev $IFACE root 2>/dev/null
 
 case "$1" in
@@ -25,10 +23,11 @@ case "$1" in
     ;;
 
   congested)
+    # htb enforces the bandwidth cap — netem alone cannot limit throughput
     tc qdisc add dev $IFACE root handle 1: htb default 10
     tc class add dev $IFACE parent 1: classid 1:10 htb rate 1500kbit
-    tc qdisc add dev $IFACE parent 1:10 handle 10: netem delay 50ms loss 1%
-    echo "Profile: congested — 1.5 Mbps cap + 50ms delay + 1% loss"
+    tc qdisc add dev $IFACE parent 1:10 handle 10: netem delay 200ms 30ms loss 2%
+    echo "Profile: congested — 1.5 Mbps cap + 200ms delay (±30ms jitter) + 2% loss"
     ;;
 
   *)

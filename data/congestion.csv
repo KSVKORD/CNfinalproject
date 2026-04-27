@@ -1,7 +1,7 @@
 profile,t,quality,bw_kbps,buffer_s,switches,stalls,elapsed_s
-congestion,30,360p,1501,16.3,0,0,30.4
-congestion,60,360p,1501,33.0,0,0,13.7
-congestion,90,360p,1501,3.0,0,0,43.7
-congestion,120,360p,1501,19.8,0,0,26.9
-congestion,150,360p,1501,36.5,0,0,10.1
-congestion,180,360p,1501,6.6,0,0,40.1
+congestion,30,360p,1457,16.1,0,0,30.6
+congestion,60,360p,1457,32.9,0,0,13.8
+congestion,90,360p,1457,2.9,0,0,43.8
+congestion,120,360p,1457,19.7,0,0,27.0
+congestion,150,360p,1457,36.4,0,0,10.3
+congestion,180,360p,1457,6.4,0,0,40.3

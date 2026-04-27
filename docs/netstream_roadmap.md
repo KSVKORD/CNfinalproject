@@ -1,6 +1,5 @@
 # NetStream — Project Roadmap
 **Goal:** Build a video streaming web app, then use tc netem to simulate degraded network conditions and observe how the stream responds.  
-**Duration:** 1 week  
 **Stack:** Node.js, Express, plain HTML/CSS/JS, FFmpeg, hls.js  
 **Frontend:** Minimal — functional only, no styling frameworks  
 **Environment:** Windows 11, AMD GPU. Node.js and tc run inside Ubuntu WSL2. Playback tested in Windows Chrome.
@@ -309,7 +308,7 @@ Applying a global cap to `eth0` without a port filter also throttles npm and apt
 | Baseline | 0 ms | 0% | none |
 | High Latency | 150 ms | 0% | none |
 | Packet Loss | 0 ms | 3% | none |
-| Congested | 50 ms | 1% | 1.5 Mbps |
+| Congested | 200 ms ±30 ms jitter | 2% | 1.5 Mbps |
 
 ### 4.1 Verify tc and netem
 
@@ -356,12 +355,12 @@ case "$1" in
     tc qdisc add dev $IFACE root handle 1: htb default 20
     tc class add dev $IFACE parent 1: classid 1:10 htb rate 1500kbit ceil 1500kbit
     tc class add dev $IFACE parent 1: classid 1:20 htb rate 100mbit
-    tc qdisc add dev $IFACE parent 1:10 handle 10: netem delay 50ms loss 1%
+    tc qdisc add dev $IFACE parent 1:10 handle 10: netem delay 200ms 30ms loss 2%
     tc filter add dev $IFACE protocol ip parent 1:0 prio 1 u32 \
       match ip dport $PORT 0xffff flowid 1:10
     tc filter add dev $IFACE protocol ip parent 1:0 prio 2 u32 \
       match ip dst 0.0.0.0/0 flowid 1:20
-    echo "Congested: 1.5 Mbps cap + 50ms delay + 1% loss on port $PORT" ;;
+    echo "Congested: 1.5 Mbps cap + 200ms delay (±30ms jitter) + 2% loss on port $PORT" ;;
 
   *) echo "Usage: $0 {baseline|latency|loss|congested|clear}"; exit 1 ;;
 esac
@@ -431,9 +430,10 @@ DevTools screenshot: saved as <profile>.png
 - TCP retransmissions from packet loss create unpredictable delay spikes — does stall count exceed the latency profile despite similar throughput reduction?
 - Does the stream recover after stalls or continue degrading?
 
-**Congested (50ms + 1% loss + 1.5 Mbps cap)**
+**Congested (200ms ±30ms jitter + 2% loss + 1.5 Mbps cap)**
 - Does quality fall back from 720p to 360p? The 1.5 Mbps cap makes 720p's 2500 kbps requirement mathematically unreachable — the ABR controller should settle at 360p quickly and stay there.
 - How quickly does the switch happen after playback starts?
+- The 200ms delay with jitter distinguishes this profile from normal internet latency (60–80ms cross-continental) and reflects realistic congested queue behavior where buffer occupancy fluctuates unpredictably.
 
 **Four comparison charts** (any tool: Excel, Google Sheets, or hand-drawn):
 - Average quality level per profile (360p = 1, 720p = 2)
@@ -661,6 +661,6 @@ Stats update every 1 second via `setInterval`. Safari fallback uses native HLS (
 | Multer file size | Set `limits.fileSize` to 500 MB — the default limit rejects most video files. |
 | spawn vs exec | Always use `spawn()` for FFmpeg — `exec()` buffers stderr and crashes on large videos. |
 | master.m3u8 timing | Write it inside the spawn `close` callback — segments do not exist before FFmpeg exits. |
-| tc interface | Target `eth0` (172.x.x.x), not `lo` — Chrome traffic passes through eth0, not loopback. |
-| tc port filtering | Filter to port 3000 only — a global eth0 cap throttles npm and apt. |
+| tc interface | Target `lo` (loopback), not `eth0` — WSL2 mirrored networking mode causes Chrome to connect via loopback, not eth0. |
+| tc port filtering | Port filtering on `lo` does not work reliably (Chrome may use IPv6 `::1`). Apply netem to all loopback traffic. |
 | Browser tab focus | Keep the Chrome tab active during data collection — backgrounded tabs throttle JS timers. |

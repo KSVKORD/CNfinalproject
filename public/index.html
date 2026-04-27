@@ -26,7 +26,6 @@
     const status = document.getElementById('status');
     const list   = document.getElementById('list');
 
-    // Load existing ready videos on page open
     fetch('/videos').then(r => r.json()).then(ids => ids.forEach(addToLibrary));
 
     document.getElementById('btn').addEventListener('click', () => {
@@ -48,6 +47,7 @@
     });
 
     function poll(jobId, count) {
+      // cap at 40 attempts (2 min) — failed jobs would otherwise poll forever
       if (count >= 40) { status.textContent = 'Timed out. Please retry.'; return; }
       fetch('/status/' + jobId)
         .then(r => r.json())
@@ -64,7 +64,7 @@
     }
 
     function addToLibrary(jobId) {
-      if (document.getElementById('link-' + jobId)) return; // already listed
+      if (document.getElementById('link-' + jobId)) return;
       const a = document.createElement('a');
       a.id   = 'link-' + jobId;
       a.href = 'player.html?jobId=' + jobId;

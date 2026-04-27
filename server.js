@@ -6,12 +6,10 @@ const { spawn }    = require('child_process');
 
 const app = express();
 
-// Ensure directories exist on startup
 ['uploads', 'hls', 'public'].forEach(d => fs.mkdirSync(d, { recursive: true }));
 
-// ── Job state ──────────────────────────────────────────────────────────────
 const jobs  = {};  // jobId → { status, message?, masterUrl? }
-const queue = [];  // pending { jobId, inputPath }
+const queue = [];
 let activeFfmpeg = null;
 
 function startNextJob() {
@@ -26,6 +24,8 @@ function processVideo(jobId, inputPath) {
   fs.mkdirSync(`hls/${jobId}/720p`, { recursive: true });
 
   let stderr = '';
+
+  // spawn not exec — exec buffers all ffmpeg stderr and overflows on large videos
   const ff = spawn('ffmpeg', [
     '-i', inputPath,
     // 360p
@@ -50,6 +50,7 @@ function processVideo(jobId, inputPath) {
   ff.on('close', code => {
     activeFfmpeg = null;
     if (code === 0) {
+      // write master.m3u8 here, not before — segments don't exist until ffmpeg exits
       fs.writeFileSync(`hls/${jobId}/master.m3u8`, [
         '#EXTM3U',
         '#EXT-X-VERSION:3',
@@ -64,18 +65,16 @@ function processVideo(jobId, inputPath) {
       jobs[jobId] = { status: 'error', message: stderr.slice(-300) };
       console.error(`[fail] ${jobId} (exit ${code})`);
     }
-    fs.unlink(inputPath, () => {});  // delete raw upload
+    fs.unlink(inputPath, () => {});
     startNextJob();
   });
 
   console.log(`[proc] ${jobId}`);
 }
 
-// ── Static serving ─────────────────────────────────────────────────────────
 app.use('/',    express.static('public'));
 app.use('/hls', express.static('hls'));
 
-// ── Routes ─────────────────────────────────────────────────────────────────
 app.post('/upload', multer({
   storage: multer.diskStorage({
     destination: 'uploads/',
@@ -90,6 +89,7 @@ app.post('/upload', multer({
   },
 }).single('video'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No valid video file received' });
+  // sanitize filename — spaces and special chars break directory paths
   const jobId = path.parse(req.file.filename).name.replace(/[^a-zA-Z0-9_-]/g, '_');
   jobs[jobId] = { status: 'pending' };
   queue.push({ jobId, inputPath: req.file.path });
@@ -107,6 +107,5 @@ app.get('/videos', (req, res) => {
   res.json(Object.keys(jobs).filter(id => jobs[id].status === 'ready'));
 });
 
-// ── Start ──────────────────────────────────────────────────────────────────
 app.listen(3000, () => console.log('Server listening on http://localhost:3000'));
 process.on('exit', () => { if (activeFfmpeg) activeFfmpeg.kill(); });
